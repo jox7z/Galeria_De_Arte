@@ -1,0 +1,50 @@
+CREATE OR REPLACE PROCEDURE SP_LOGIN(
+    P_NOMBRE_USUARIO IN  VARCHAR2,
+    P_CONTRASENA     IN  VARCHAR2,
+    P_ID_USUARIO     OUT NUMBER,
+    P_ID_ROL         OUT NUMBER
+)
+AS
+    V_ID     USUARIOS.ID_USUARIO%TYPE;
+    V_ROL    USUARIOS.ID_ROL%TYPE;
+    V_ESTADO USUARIOS.ESTADO%TYPE;
+    V_CLAVE  USUARIOS.CONTRASENA%TYPE;
+    V_NOMBRE USUARIOS.NOMBRE_USUARIO%TYPE;
+BEGIN
+    IF P_NOMBRE_USUARIO IS NULL OR P_CONTRASENA IS NULL THEN
+        RAISE_APPLICATION_ERROR(-20040, 'Usuario y contraseña son obligatorios.');
+    END IF;
+
+    BEGIN
+        SELECT ID_USUARIO, ID_ROL, ESTADO, CONTRASENA, NOMBRE_USUARIO
+          INTO V_ID, V_ROL, V_ESTADO, V_CLAVE, V_NOMBRE
+          FROM USUARIOS
+         WHERE LOWER(NOMBRE_USUARIO) = LOWER(P_NOMBRE_USUARIO);
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20041, 'Usuario o contraseña incorrectos.');
+    END;
+
+    IF V_CLAVE IS NULL OR V_CLAVE <> FN_HASH_CLAVE(V_NOMBRE, P_CONTRASENA) THEN
+        RAISE_APPLICATION_ERROR(-20041, 'Usuario o contraseña incorrectos.');
+    END IF;
+
+    IF V_ESTADO <> 'ACTIVO' THEN
+        RAISE_APPLICATION_ERROR(-20044, 'El usuario está inactivo.');
+    END IF;
+
+    -- Deja al usuario como "actor" de la sesión (lo usan triggers y procedimientos)
+    SET_CONTEXT_PKG.SET_USUARIO(V_ID);
+
+    SP_REGISTRAR_ACCION_GENERAL(
+        P_TIPO_ACCION => 'LOGIN',
+        P_MODULO      => 'SEGURIDAD',
+        P_ACCION      => 'Inicio de sesión: ' || V_NOMBRE,
+        P_ID_REGISTRO => V_ID,
+        P_TABLA       => 'USUARIOS'
+    );
+
+    P_ID_USUARIO := V_ID;
+    P_ID_ROL     := V_ROL;
+END;
+/
